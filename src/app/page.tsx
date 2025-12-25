@@ -1,63 +1,201 @@
-import Image from "next/image";
+"use client";
+
+import { useState, useRef, useEffect } from "react";
 
 export default function Home() {
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copySuccess, setCopySuccess] = useState(false);
+  const copyTimeoutRef = useRef<number | null>(null);
+
+  // Cleanup object URL on unmount or when previewUrl changes
+  useEffect(() => {
+    return () => {
+      if (previewUrl && previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
+  // Cleanup copy timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+        copyTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedFile(file);
+      setError(null);
+      setUploadedImageUrl(null);
+      setCopySuccess(false);
+
+      // Revoke existing preview URL if present
+      if (previewUrl && previewUrl.startsWith("blob:")) {
+        URL.revokeObjectURL(previewUrl);
+      }
+
+      // Create preview URL using object URL
+      try {
+        const objectUrl = URL.createObjectURL(file);
+        setPreviewUrl(objectUrl);
+      } catch (err) {
+        setError("Failed to create image preview");
+        setPreviewUrl(null);
+      }
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      setError("Please select an image first");
+      return;
+    }
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Upload failed");
+      }
+
+      const data = await response.json();
+      const imageUrl = data.imageUrl || data.url || data.image_url || null;
+      
+      if (!imageUrl || typeof imageUrl !== "string" || imageUrl.trim() === "") {
+        throw new Error("Upload succeeded but no imageUrl was returned");
+      }
+      
+      setUploadedImageUrl(imageUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+      <main className="w-full max-w-2xl p-8 bg-white dark:bg-black rounded-lg shadow-lg">
+        <h1 className="text-3xl font-semibold mb-8 text-center text-black dark:text-zinc-50">
+          Image Upload
+        </h1>
+
+        <div className="space-y-6">
+          {/* File Input */}
+          <div>
+            <label
+              htmlFor="image-upload"
+              className="block text-sm font-medium mb-2 text-black dark:text-zinc-50"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+              Select Image
+            </label>
+            <input
+              id="image-upload"
+              type="file"
+              accept="image/*"
+              onChange={handleFileChange}
+              className="block w-full text-sm text-zinc-600 dark:text-zinc-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-black file:text-white dark:file:bg-white dark:file:text-black hover:file:bg-zinc-800 dark:hover:file:bg-zinc-200 cursor-pointer"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+          </div>
+
+          {/* Preview */}
+          {previewUrl && (
+            <div>
+              <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
+                Preview
+              </label>
+              <div className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded-lg p-4 flex justify-center">
+                <img
+                  src={previewUrl}
+                  alt="Preview"
+                  className="max-w-full max-h-96 object-contain rounded-lg"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Upload Button */}
+          <button
+            onClick={handleUpload}
+            disabled={!selectedFile || isUploading}
+            className="w-full py-3 px-4 bg-black text-white dark:bg-white dark:text-black rounded-full font-semibold transition-colors hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Documentation
-          </a>
+            {isUploading ? "Uploading..." : "Upload Image"}
+          </button>
+
+          {/* Error Message */}
+          {error && (
+            <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+            </div>
+          )}
+
+          {/* Uploaded Image URL */}
+          {uploadedImageUrl && (
+            <div className="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+              <label className="block text-sm font-medium mb-2 text-black dark:text-zinc-50">
+                Uploaded Image URL
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={uploadedImageUrl}
+                  readOnly
+                  className="flex-1 px-3 py-2 bg-white dark:bg-black border border-zinc-300 dark:border-zinc-700 rounded-lg text-sm text-black dark:text-zinc-50"
+                />
+                <button
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(uploadedImageUrl);
+                      
+                      // Clear any existing timeout
+                      if (copyTimeoutRef.current !== null) {
+                        clearTimeout(copyTimeoutRef.current);
+                      }
+                      
+                      setCopySuccess(true);
+                      setError(null);
+                      copyTimeoutRef.current = window.setTimeout(() => {
+                        setCopySuccess(false);
+                        copyTimeoutRef.current = null;
+                      }, 2000);
+                    } catch (err) {
+                      setError("Failed to copy URL to clipboard");
+                      setCopySuccess(false);
+                    }
+                  }}
+                  className="px-4 py-2 bg-zinc-200 dark:bg-zinc-800 text-black dark:text-white rounded-lg text-sm font-medium hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  {copySuccess ? "Copied!" : "Copy"}
+                </button>
+              </div>
+              <div className="mt-4 flex justify-center">
+                <img
+                  src={uploadedImageUrl}
+                  alt="Uploaded"
+                  className="max-w-full max-h-96 object-contain rounded-lg border border-zinc-300 dark:border-zinc-700"
+                />
+              </div>
+            </div>
+          )}
         </div>
       </main>
     </div>
